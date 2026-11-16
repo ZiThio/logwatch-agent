@@ -1,0 +1,7 @@
+2026-11-16T12:00:00Z edge-fw-1 ALLOW src=192.0.2.10 dst=198.51.100.20 dport=443 protocol=TCP
+2026-11-16T12:00:10Z edge-fw-1 ALLOW src=192.0.2.11 dst=198.51.100.20 dport=443 protocol=TCP
+2026-11-16T12:01:00Z edge-fw-1 DENY src=192.0.2.50 dst=198.51.100.20 dport=443 protocol=TCP
+2026-11-16T12:01:05Z edge-fw-1 DENY src=192.0.2.50 dst=198.51.100.20 dport=443 protocol=TCP
+2026-11-16T12:01:10Z edge-fw-1 DENY src=192.0.2.50 dst=198.51.100.20 dport=443 protocol=TCP
+2026-11-16T12:01:15Z edge-fw-1 DENY src=192.0.2.50 dst=198.51.100.20 dport=443 protocol=TCP
+2026-11-16T12:02:00Z web-1 nginx access request_completed status=200 src=192.0.2.10
