@@ -19,26 +19,32 @@ class FileFollower:
         return f"{stat.st_dev}:{stat.st_ino}"
 
     def read_new_lines(self) -> list[str]:
-        stat = self.path.stat()
-        file_id = self._file_id(stat)
-        cursor = self.state.load_cursor(self.path)
-        offset = cursor[1] if cursor and cursor[0] == file_id else 0
-        if stat.st_size < offset:
-            offset = 0
-
+        self._pending_cursor = None
         lines: list[str] = []
-        with self.path.open("rb") as stream:
-            stream.seek(offset)
-            while True:
-                line_start = stream.tell()
-                raw = stream.readline()
-                if not raw:
-                    break
-                if not raw.endswith(b"\n"):
-                    stream.seek(line_start)
-                    break
-                lines.append(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
-                offset = stream.tell()
+        try:
+            # Stat the open handle so the file id and contents always match,
+            # even if the path is replaced between calls.
+            with self.path.open("rb") as stream:
+                stat = os.fstat(stream.fileno())
+                file_id = self._file_id(stat)
+                cursor = self.state.load_cursor(self.path)
+                offset = cursor[1] if cursor and cursor[0] == file_id else 0
+                if stat.st_size < offset:
+                    offset = 0
+                stream.seek(offset)
+                while True:
+                    line_start = stream.tell()
+                    raw = stream.readline()
+                    if not raw:
+                        break
+                    if not raw.endswith(b"\n"):
+                        stream.seek(line_start)
+                        break
+                    lines.append(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+                    offset = stream.tell()
+        except FileNotFoundError:
+            # Briefly missing during log rotation; try again on the next poll.
+            return []
 
         self._pending_cursor = (file_id, offset)
         return lines

@@ -158,3 +158,8 @@ python -m unittest discover -s tests -v
 ```
 
 Tests do not require Ollama or ChromaDB and do not access a network.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the branch and
+pull-request workflow, and the design rules the project relies on.

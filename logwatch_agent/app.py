@@ -70,7 +70,12 @@ def _write_alert(
     emit: Callable[[str], None] = print,
 ) -> None:
     if explainer is not None:
-        alert.analysis = explainer.explain(alert)
+        try:
+            alert.analysis = explainer.explain(alert)
+        except (RuntimeError, OSError, ValueError) as exc:
+            # The AI explanation is optional: never lose or block the alert itself.
+            alert.analysis = {"error": f"AI explanation unavailable: {exc}"}
+            print(f"Warning: {alert.analysis['error']}", file=sys.stderr)
     payload = json.dumps(alert.to_dict(), ensure_ascii=False)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("a", encoding="utf-8") as stream:

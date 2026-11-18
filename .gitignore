@@ -1,8 +1,26 @@
+# Runtime state and generated output
 .state/
-alerts.jsonl
+*alerts.jsonl
+live-demo.log
+
+# Python
 __pycache__/
 *.py[cod]
-.venv/
 *.egg-info/
 build/
 dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local secrets
+.venv/
+venv/
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
