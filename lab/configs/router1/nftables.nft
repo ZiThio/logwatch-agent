@@ -1,0 +1,18 @@
+# Edge firewall on router1. Policy (matches runbooks/firewall-troubleshooting.md):
+# the client network 192.0.2.0/24 may reach the web server 198.51.100.20 on
+# TCP 80 and 443. Everything else forwarded through the router is denied and
+# logged. Log events go to NFLOG group 1, where ulogd turns them into syslog
+# lines starting with "FW-DENY" (kernel logging does not work inside containers).
+flush ruleset
+
+table inet filter {
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        ct state established,related accept
+        ip protocol icmp accept
+        ip saddr 192.0.2.0/24 ip daddr 198.51.100.20 tcp dport { 80, 443 } accept
+
+        log prefix "FW-DENY " group 1
+    }
+}

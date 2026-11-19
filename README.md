@@ -126,6 +126,13 @@ matching entries within 60 seconds. The authentication-failure rule triggers
 at five matching entries within 60 seconds. Both thresholds are explicit in
 `logwatch_agent/core.py`.
 
+## Containerlab environment
+
+[lab/README.md](lab/README.md) describes a Containerlab network (two FRR
+routers, an nftables firewall, an nginx web server, clients and an rsyslog
+collector) that produces real logs, plus a systemd service that runs the agent
+continuously against them.
+
 ## Demo flow
 
 1. Explain the fictional topology: a client network, edge firewall, and HTTPS

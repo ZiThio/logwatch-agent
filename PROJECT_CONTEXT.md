@@ -45,7 +45,11 @@ logwatch-agent/
 │   ├── state.py         # SQLite store: file cursors + emitted alert IDs
 │   ├── ollama.py        # loopback-only Ollama HTTP client (urllib)
 │   └── rag.py           # ChromaDB runbook index + AlertExplainer
-├── runbooks/firewall-troubleshooting.md   # synthetic example runbook
+├── runbooks/                               # firewall-troubleshooting.md, web-authentication-failures.md
+├── lab/                                    # Containerlab environment (see lab/README.md):
+│                                           #   FRR routers, nftables+ulogd firewall, nginx,
+│                                           #   rsyslog collector → lab/logs/all.log, traffic
+│                                           #   scripts, systemd service for the watch mode
 ├── demo/sample.log                         # synthetic firewall log
 ├── tests/test_core.py                      # unittest suite (14 tests)
 ├── README.md, CONTRIBUTING.md, pyproject.toml
@@ -90,11 +94,12 @@ quoted) and then sets the `category`:
      alone is ignored on purpose, so that "connection dropped" and
      `policy=deny-default` do not match.
 2. `authentication_failure`: "authentication failed", "login failed",
-   "failed password" or "invalid password", case-insensitive.
+   "failed password", "invalid password", or the nginx basic-auth messages
+   `password mismatch` and `user "<name>" was not found`, case-insensitive.
 3. Anything else is `other`.
 
 The source IP comes from the `src`, `src_ip` or `source_ip` attributes, or
-else from a "from <ip>" pattern. It is validated with `ipaddress`.
+else from a "from <ip>" or "client: <ip>" (nginx) pattern. It is validated with `ipaddress`.
 
 **Data classes**
 - `LogEvent` (frozen): `timestamp, hostname, category, source_ip, message, raw`.

@@ -1,0 +1,24 @@
+# ulogd2 configuration template. lab-start replaces @PLUGDIR@ with the
+# plugin directory of the installed package.
+#
+# Stack: read NFLOG group 1 -> decode the packet -> format it like the
+# kernel's iptables log ("FW-DENY IN=... SRC=... DST=... DPT=...") -> syslog.
+[global]
+logfile="syslog"
+loglevel=5
+
+plugin="@PLUGDIR@/ulogd_inppkt_NFLOG.so"
+plugin="@PLUGDIR@/ulogd_raw2packet_BASE.so"
+plugin="@PLUGDIR@/ulogd_filter_IFINDEX.so"
+plugin="@PLUGDIR@/ulogd_filter_IP2STR.so"
+plugin="@PLUGDIR@/ulogd_filter_PRINTPKT.so"
+plugin="@PLUGDIR@/ulogd_output_SYSLOG.so"
+
+stack=log1:NFLOG,base1:BASE,ifi1:IFINDEX,ip2str1:IP2STR,print1:PRINTPKT,sys1:SYSLOG
+
+[log1]
+group=1
+
+[sys1]
+facility=LOG_LOCAL1
+level=LOG_NOTICE

@@ -2,6 +2,8 @@
 .state/
 *alerts.jsonl
 live-demo.log
+lab/logs/*
+!lab/logs/.gitkeep
 
 # Python
 __pycache__/
