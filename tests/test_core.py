@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from unittest import mock
 
-from logwatch_agent.app import DEFAULT_CHAT_MODEL, _write_alert, build_parser
+from logwatch_agent.app import DEFAULT_CHAT_MODEL, _write_alert, build_parser, main
 from logwatch_agent.core import RuleDetector, parse_log_line
 from logwatch_agent.follower import FileFollower
 from logwatch_agent.ollama import (
@@ -298,6 +298,27 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(watch.ollama_timeout, 300.0)
         index = parser.parse_args(["index", "--ollama-timeout", "45.5"])
         self.assertEqual(index.ollama_timeout, 45.5)
+
+    def test_watch_waits_for_a_missing_log_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            argv = [
+                "watch", "--log", str(base / "not-yet.log"),
+                "--state-dir", str(base / "state"), "--alerts", str(base / "alerts.jsonl"),
+            ]
+            # Stop the polling loop after its first pass.
+            with mock.patch("logwatch_agent.app.time.sleep", side_effect=KeyboardInterrupt):
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    exit_code = main(argv)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Waiting for", stdout.getvalue())
+
+    def test_replay_still_requires_an_existing_log_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                exit_code = main(["replay", "--log", str(Path(temporary) / "missing.log")])
+        self.assertEqual(exit_code, 2)
+        self.assertIn("Log file not found", stderr.getvalue())
 
     def test_rejects_invalid_ollama_timeout(self) -> None:
         parser = build_parser()

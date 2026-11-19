@@ -156,6 +156,10 @@ def _run_watch(args: argparse.Namespace) -> int:
     follower = FileFollower(args.log, state)
     detector = RuleDetector()
     print(f"Watching {args.log} (Ctrl+C to stop).")
+    if not args.log.exists():
+        # Normal before a collector writes its first line (e.g. the lab is still
+        # starting). The follower keeps polling until the file appears.
+        print(f"Waiting for {args.log} to be created.")
     try:
         while True:
             _process_lines(
@@ -185,10 +189,13 @@ def main(argv: list[str] | None = None) -> int:
             count = knowledge_base.index_directory(args.runbooks, rebuild=args.rebuild)
             print(f"Indexed {count} runbook chunk(s) in {args.chroma_dir}.")
             return 0
-        if not args.log.is_file():
-            raise FileNotFoundError(f"Log file not found: {args.log}")
         if args.command == "replay":
+            if not args.log.is_file():
+                raise FileNotFoundError(f"Log file not found: {args.log}")
             return _run_replay(args)
+        # watch: a missing file is fine (it is waited for); a directory is not.
+        if args.log.exists() and not args.log.is_file():
+            raise ValueError(f"Not a regular file: {args.log}")
         return _run_watch(args)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
