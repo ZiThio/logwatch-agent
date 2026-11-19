@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
-from typing import Callable
 
-from .core import Alert, RuleDetector, parse_log_line
+from .core import RuleDetector, parse_log_line
 from .follower import FileFollower
 from .ollama import DEFAULT_TIMEOUT_SECONDS, OllamaClient
+from .output import AlertWriter, ExplanationWorker, handle_alert
 
 # qwen3:8b gave the most accurate explanations in testing. On CPU-only machines
 # it can take about a minute per alert; --model qwen2.5:3b is faster but less
 # reliable (it misread the firewall policy in the demo).
 DEFAULT_CHAT_MODEL = "qwen3:8b"
-from .rag import AlertExplainer, ChromaKnowledgeBase
+from .rag import DEFAULT_MAX_DISTANCE, AlertExplainer, ChromaKnowledgeBase
 from .state import StateStore
 
 
@@ -48,6 +47,25 @@ def _add_ai_options(parser: argparse.ArgumentParser) -> None:
     _add_ollama_timeout(parser)
     parser.add_argument("--chroma-dir", type=Path, default=Path(".state/chroma"))
     parser.add_argument("--runbooks", type=Path, default=Path("runbooks"))
+    parser.add_argument(
+        "--runbook-max-distance",
+        type=_distance,
+        default=DEFAULT_MAX_DISTANCE,
+        help=(
+            "Ignore runbook passages less similar than this cosine distance "
+            f"(0 = identical, lower is stricter; default: {DEFAULT_MAX_DISTANCE:g})"
+        ),
+    )
+
+
+def _distance(value: str) -> float:
+    try:
+        distance = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
+    if not 0 < distance <= 2:
+        raise argparse.ArgumentTypeError("must be greater than 0 and at most 2")
+    return distance
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,40 +101,28 @@ def _make_explainer(args: argparse.Namespace) -> AlertExplainer | None:
     if not getattr(args, "ai", False):
         return None
     client = OllamaClient(args.ollama_url, timeout=args.ollama_timeout)
-    knowledge_base = ChromaKnowledgeBase(args.chroma_dir, client, args.embedding_model)
+    knowledge_base = ChromaKnowledgeBase(
+        args.chroma_dir,
+        client,
+        args.embedding_model,
+        max_distance=args.runbook_max_distance,
+    )
     knowledge_base.index_directory(args.runbooks)
     return AlertExplainer(knowledge_base, client, args.model)
 
 
-def _write_alert(
-    alert: Alert,
-    *,
-    output: Path,
-    explainer: AlertExplainer | None,
-    emit: Callable[[str], None] = print,
-) -> None:
-    if explainer is not None:
-        try:
-            alert.analysis = explainer.explain(alert)
-        except (RuntimeError, OSError, ValueError) as exc:
-            # The AI explanation is optional: never lose or block the alert itself.
-            alert.analysis = {"error": f"AI explanation unavailable: {exc}"}
-            print(f"Warning: {alert.analysis['error']}", file=sys.stderr)
-    payload = json.dumps(alert.to_dict(), ensure_ascii=False)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("a", encoding="utf-8") as stream:
-        stream.write(payload + "\n")
-    emit(payload)
+def _make_worker(args: argparse.Namespace, writer: AlertWriter) -> ExplanationWorker | None:
+    explainer = _make_explainer(args)
+    return ExplanationWorker(explainer, writer) if explainer is not None else None
 
 
 def _process_lines(
     lines: list[str],
     detector: RuleDetector,
     *,
-    output: Path,
-    explainer: AlertExplainer | None,
+    writer: AlertWriter,
+    worker: ExplanationWorker | None,
     state: StateStore | None = None,
-    emit: Callable[[str], None] = print,
 ) -> int:
     emitted = 0
     for line in lines:
@@ -126,7 +132,7 @@ def _process_lines(
         for alert in detector.observe(event):
             if state is not None and state.has_alert(alert.alert_id):
                 continue
-            _write_alert(alert, output=output, explainer=explainer, emit=emit)
+            handle_alert(alert, writer=writer, worker=worker)
             if state is not None:
                 state.save_alert_once(alert)
             emitted += 1
@@ -134,15 +140,14 @@ def _process_lines(
 
 
 def _run_replay(args: argparse.Namespace) -> int:
-    explainer = _make_explainer(args)
+    writer = AlertWriter(args.alerts)
+    worker = _make_worker(args, writer)
     detector = RuleDetector()
     with args.log.open("r", encoding="utf-8", errors="replace") as stream:
-        count = _process_lines(
-            stream.readlines(),
-            detector,
-            output=args.alerts,
-            explainer=explainer,
-        )
+        count = _process_lines(stream.readlines(), detector, writer=writer, worker=worker)
+    if worker is not None and worker.pending():
+        print(f"Waiting for {worker.pending()} AI explanation(s)...")
+        worker.wait()
     print(f"Replay complete: {count} alert(s).")
     return 0
 
@@ -150,7 +155,8 @@ def _run_replay(args: argparse.Namespace) -> int:
 def _run_watch(args: argparse.Namespace) -> int:
     if args.interval <= 0:
         raise ValueError("--interval must be greater than zero")
-    explainer = _make_explainer(args)
+    writer = AlertWriter(args.alerts)
+    worker = _make_worker(args, writer)
     args.state_dir.mkdir(parents=True, exist_ok=True)
     state = StateStore(args.state_dir / "monitor.sqlite3")
     follower = FileFollower(args.log, state)
@@ -165,14 +171,17 @@ def _run_watch(args: argparse.Namespace) -> int:
             _process_lines(
                 follower.read_new_lines(),
                 detector,
-                output=args.alerts,
-                explainer=explainer,
+                writer=writer,
+                worker=worker,
                 state=state,
             )
             follower.commit()
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("\nMonitoring stopped.")
+        if worker is not None and worker.pending():
+            # The alerts themselves are already saved; only their analyses are lost.
+            print(f"{worker.pending()} AI explanation(s) were not finished.")
     finally:
         state.close()
     return 0

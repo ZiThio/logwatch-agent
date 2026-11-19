@@ -62,8 +62,9 @@ Do not push directly to `main`.
 
 - **Detection stays deterministic.** Alerts come from explicit rules in
   `core.py`, never from an LLM. AI output is optional enrichment only.
-- **An AI failure must never drop an alert.** The alert is written with an
-  `analysis.error` field instead.
+- **The AI must never drop or delay an alert.** Alerts are written as soon as
+  a rule fires; explanations run on a background thread and are written as
+  separate `analysis` records, with an `error` field when the model fails.
 - **Ollama stays loopback-only.** Logs and runbooks must not be sent to a
   remote service.
 - **No command execution or automatic remediation.** The tool suggests checks;

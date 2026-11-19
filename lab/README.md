@@ -93,12 +93,19 @@ bash lab/scripts/attack.sh auth             # wrong passwords -> authentication-
 ```
 
 Each rule fires at most once every 5 minutes for the same source, so wait
-before repeating a scenario. Alerts appear in the service log and in
-`lab/alerts.jsonl`:
+before repeating a scenario. Each alert appears in the service log and in
+`lab/alerts.jsonl` within seconds, as a `"record_type": "alert"` line with
+`"analysis": {"status": "pending"}`. The AI explanation follows later (often a
+minute or more) as a separate `"record_type": "analysis"` line with the same
+`alert_id`. Monitoring continues meanwhile. Show the last two records:
 
 ```bash
-tail -n 1 lab/alerts.jsonl | python3 -m json.tool
+tail -n 2 lab/alerts.jsonl | python3 -m json.tool --json-lines
 ```
+
+An explanation lists in `runbook_sources` only runbooks relevant to that alert
+(an empty list means none applied). If a relevant runbook is missing from it,
+loosen the filter in the service with `--runbook-max-distance 0.45`.
 
 ## 5. Stop
 

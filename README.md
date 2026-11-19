@@ -65,7 +65,9 @@ python -m logwatch_agent replay --log .\demo\sample.log --alerts .\demo-alerts.j
 
 Three or more firewall denies from the same source within 60 seconds produce
 one alert. The JSON alert contains the detection rule, severity, source, and
-the exact log lines that triggered it. Remove `.\demo-alerts.jsonl` before
+the exact log lines that triggered it. With `--ai`, the alert is written at
+once with `"analysis": {"status": "pending"}`, and the explanation follows as a
+separate `"record_type": "analysis"` line with the same `alert_id`. Remove `.\demo-alerts.jsonl` before
 re-running if you want a fresh report.
 
 ## Optional RAG explanations with local Ollama

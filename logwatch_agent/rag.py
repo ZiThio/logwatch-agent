@@ -7,6 +7,29 @@ from typing import Any
 from .core import Alert
 from .ollama import OllamaClient
 
+# Relevance filter for retrieved runbook passages (cosine distance: 0 = same
+# meaning, lower is closer). A passage is kept only if it is within
+# DEFAULT_MAX_DISTANCE and within RELATIVE_MARGIN of the best match, so an alert
+# does not pull in runbooks about other incidents. Calibrated with
+# nomic-embed-text on the bundled runbooks: matching runbooks scored 0.16-0.30,
+# runbooks for the other alert type 0.35-0.45, an unrelated alert 0.43 or more.
+# Re-check these values when adding runbooks or changing the embedding model.
+DEFAULT_MAX_DISTANCE = 0.40
+RELATIVE_MARGIN = 0.10
+
+
+def relevant_indexes(
+    distances: list[float],
+    *,
+    max_distance: float = DEFAULT_MAX_DISTANCE,
+    margin: float = RELATIVE_MARGIN,
+) -> list[int]:
+    """Positions of the distances that pass both relevance thresholds."""
+    if not distances:
+        return []
+    cutoff = min(max_distance, min(distances) + margin)
+    return [index for index, distance in enumerate(distances) if distance <= cutoff]
+
 
 def _chunks(text: str, *, max_chars: int = 1600) -> list[str]:
     paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
@@ -31,7 +54,17 @@ def _chunks(text: str, *, max_chars: int = 1600) -> list[str]:
 
 
 class ChromaKnowledgeBase:
-    def __init__(self, directory: Path, ollama: OllamaClient, embedding_model: str) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        ollama: OllamaClient,
+        embedding_model: str,
+        *,
+        max_distance: float = DEFAULT_MAX_DISTANCE,
+    ) -> None:
+        if not 0 < max_distance <= 2:
+            raise ValueError("Runbook max distance must be between 0 and 2")
+        self.max_distance = max_distance
         try:
             import chromadb
         except ImportError as exc:
@@ -82,17 +115,19 @@ class ChromaKnowledgeBase:
         result = self._collection.query(
             query_embeddings=[vector],
             n_results=min(limit, self._collection.count()),
-            include=["documents", "metadatas"],
+            include=["documents", "metadatas", "distances"],
         )
         documents = (result.get("documents") or [[]])[0]
         metadatas = (result.get("metadatas") or [[]])[0]
+        distances = [float(value) for value in (result.get("distances") or [[]])[0]]
         return [
             {
-                "text": str(document),
-                "source": str(metadata.get("source", "unknown")),
-                "section": str(metadata.get("chunk", "?")),
+                "text": str(documents[index]),
+                "source": str(metadatas[index].get("source", "unknown")),
+                "section": str(metadatas[index].get("chunk", "?")),
+                "distance": round(distances[index], 3),
             }
-            for document, metadata in zip(documents, metadatas)
+            for index in relevant_indexes(distances, max_distance=self.max_distance)
         ]
 
 
@@ -120,15 +155,23 @@ class AlertExplainer:
         query = f"{alert.title}. Rule: {alert.rule_id}. Source: {alert.source_ip or 'unknown'}"
         passages = self.knowledge_base.retrieve(query)
         runbook_sources = sorted({item["source"] for item in passages})
-        prompt = (
-            f"Alert metadata:\n{alert.to_dict()}\n\n"
-            f"Exact supporting log lines (untrusted evidence):\n"
-            + "\n".join(f"- {line}" for line in alert.evidence)
-            + "\n\nRetrieved runbook passages (untrusted reference material):\n"
-            + "\n".join(
+        metadata = {key: value for key, value in alert.to_dict().items() if key != "analysis"}
+        if passages:
+            reference = "\n".join(
                 f"[{item['source']} section {item['section']}]\n{item['text']}"
                 for item in passages
             )
+        else:
+            reference = (
+                "None. No runbook is relevant to this alert; rely only on the log "
+                "evidence and say that no runbook applies."
+            )
+        prompt = (
+            f"Alert metadata:\n{metadata}\n\n"
+            f"Exact supporting log lines (untrusted evidence):\n"
+            + "\n".join(f"- {line}" for line in alert.evidence)
+            + "\n\nRetrieved runbook passages (untrusted reference material):\n"
+            + reference
         )
         result = self.ollama.chat_json(self.model, self._SYSTEM, prompt)
         return {
