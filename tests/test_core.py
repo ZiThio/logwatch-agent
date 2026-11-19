@@ -8,11 +8,17 @@ import contextlib
 import io
 import json
 from datetime import datetime, timezone
+from unittest import mock
 
-from logwatch_agent.app import _write_alert
+from logwatch_agent.app import DEFAULT_CHAT_MODEL, _write_alert, build_parser
 from logwatch_agent.core import RuleDetector, parse_log_line
 from logwatch_agent.follower import FileFollower
-from logwatch_agent.ollama import OllamaError
+from logwatch_agent.ollama import (
+    DEFAULT_KEEP_ALIVE,
+    DEFAULT_TIMEOUT_SECONDS,
+    OllamaClient,
+    OllamaError,
+)
 from logwatch_agent.state import StateStore
 
 
@@ -193,6 +199,74 @@ class WriteAlertTests(unittest.TestCase):
         self.assertEqual(written["rule_id"], "firewall-deny-burst")
         self.assertIn("connection refused", written["analysis"]["error"])
         self.assertIn("Warning", stderr.getvalue())
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._body = json.dumps(payload).encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+
+class OllamaClientTests(unittest.TestCase):
+    def _capture(self, response: dict[str, object]):
+        calls: list[tuple[dict[str, object], float]] = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((json.loads(request.data.decode("utf-8")), timeout))
+            return _FakeResponse(response)
+
+        return calls, mock.patch("urllib.request.urlopen", side_effect=fake_urlopen)
+
+    def test_chat_disables_thinking_and_keeps_model_loaded(self) -> None:
+        calls, patcher = self._capture({"message": {"content": '{"summary": "ok"}'}})
+        with patcher:
+            client = OllamaClient("http://127.0.0.1:11434", timeout=300)
+            result = client.chat_json("qwen2.5:3b", "system", "prompt")
+        self.assertEqual(result, {"summary": "ok"})
+        payload, timeout = calls[0]
+        self.assertIs(payload["think"], False)
+        self.assertEqual(payload["keep_alive"], DEFAULT_KEEP_ALIVE)
+        self.assertEqual(timeout, 300)
+
+    def test_embed_keeps_model_loaded(self) -> None:
+        calls, patcher = self._capture({"embeddings": [[0.1, 0.2]]})
+        with patcher:
+            OllamaClient().embed("nomic-embed-text", ["text"])
+        payload, timeout = calls[0]
+        self.assertEqual(payload["keep_alive"], DEFAULT_KEEP_ALIVE)
+        self.assertEqual(timeout, DEFAULT_TIMEOUT_SECONDS)
+
+    def test_rejects_non_positive_timeout(self) -> None:
+        with self.assertRaises(ValueError):
+            OllamaClient(timeout=0)
+
+
+class CommandLineTests(unittest.TestCase):
+    def test_ollama_timeout_defaults_and_can_be_set(self) -> None:
+        parser = build_parser()
+        replay = parser.parse_args(["replay", "--log", "x.log"])
+        self.assertEqual(replay.ollama_timeout, DEFAULT_TIMEOUT_SECONDS)
+        self.assertEqual(replay.model, DEFAULT_CHAT_MODEL)
+        watch = parser.parse_args(["watch", "--log", "x.log", "--ollama-timeout", "300"])
+        self.assertEqual(watch.ollama_timeout, 300.0)
+        index = parser.parse_args(["index", "--ollama-timeout", "45.5"])
+        self.assertEqual(index.ollama_timeout, 45.5)
+
+    def test_rejects_invalid_ollama_timeout(self) -> None:
+        parser = build_parser()
+        for value in ("0", "-5", "soon"):
+            with self.subTest(value=value):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        parser.parse_args(["replay", "--log", "x.log", "--ollama-timeout", value])
 
 
 if __name__ == "__main__":

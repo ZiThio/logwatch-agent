@@ -96,6 +96,10 @@ If runbooks change, rebuild their vector index:
 python -m logwatch_agent index --runbooks .\runbooks --rebuild
 ```
 
+On a machine without a supported GPU, the model runs on the CPU and the first
+request (which loads the model) can be slow. Allow more time with
+`--ollama-timeout 300`. Models stay loaded for 30 minutes after each request.
+
 The Ollama client only permits an HTTP endpoint on loopback. Logs and runbooks
 are sent only to that local Ollama service; Ollama model downloads themselves
 may require internet access.

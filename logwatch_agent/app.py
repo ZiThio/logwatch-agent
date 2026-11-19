@@ -9,18 +9,43 @@ from typing import Callable
 
 from .core import Alert, RuleDetector, parse_log_line
 from .follower import FileFollower
-from .ollama import OllamaClient
+from .ollama import DEFAULT_TIMEOUT_SECONDS, OllamaClient
+
+# qwen3:8b gave the most accurate explanations in testing. On CPU-only machines
+# it can take about a minute per alert; --model qwen2.5:3b is faster but less
+# reliable (it misread the firewall policy in the demo).
+DEFAULT_CHAT_MODEL = "qwen3:8b"
 from .rag import AlertExplainer, ChromaKnowledgeBase
 from .state import StateStore
 
 
+def _positive_seconds(value: str) -> float:
+    try:
+        seconds = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number of seconds") from exc
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return seconds
+
+
+def _add_ollama_timeout(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--ollama-timeout",
+        type=_positive_seconds,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"Seconds to wait for each Ollama request (default: {DEFAULT_TIMEOUT_SECONDS:g})",
+    )
+
+
 def _add_ai_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ai", action="store_true", help="Explain alerts with local Ollama + RAG")
-    parser.add_argument("--model", default="qwen3:8b", help="Ollama chat model")
+    parser.add_argument("--model", default=DEFAULT_CHAT_MODEL, help="Ollama chat model")
     parser.add_argument(
         "--embedding-model", default="nomic-embed-text", help="Ollama embedding model"
     )
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    _add_ollama_timeout(parser)
     parser.add_argument("--chroma-dir", type=Path, default=Path(".state/chroma"))
     parser.add_argument("--runbooks", type=Path, default=Path("runbooks"))
 
@@ -49,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("--chroma-dir", type=Path, default=Path(".state/chroma"))
     index.add_argument("--embedding-model", default="nomic-embed-text")
     index.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    _add_ollama_timeout(index)
     index.add_argument("--rebuild", action="store_true", help="Replace the existing runbook index")
     return parser
 
@@ -56,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _make_explainer(args: argparse.Namespace) -> AlertExplainer | None:
     if not getattr(args, "ai", False):
         return None
-    client = OllamaClient(args.ollama_url)
+    client = OllamaClient(args.ollama_url, timeout=args.ollama_timeout)
     knowledge_base = ChromaKnowledgeBase(args.chroma_dir, client, args.embedding_model)
     knowledge_base.index_directory(args.runbooks)
     return AlertExplainer(knowledge_base, client, args.model)
@@ -152,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.command == "index":
-            client = OllamaClient(args.ollama_url)
+            client = OllamaClient(args.ollama_url, timeout=args.ollama_timeout)
             knowledge_base = ChromaKnowledgeBase(
                 args.chroma_dir, client, args.embedding_model
             )

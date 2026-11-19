@@ -11,8 +11,22 @@ class OllamaError(RuntimeError):
     pass
 
 
+DEFAULT_TIMEOUT_SECONDS = 120.0
+# How long Ollama keeps a model in memory after a request. Ollama's own default
+# is 5 minutes; alerts are often further apart, and reloading a model on a
+# CPU-only machine can take longer than the request timeout.
+DEFAULT_KEEP_ALIVE = "30m"
+
+
 class OllamaClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", timeout: float = 120.0):
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:11434",
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        keep_alive: str = DEFAULT_KEEP_ALIVE,
+    ):
+        if timeout <= 0:
+            raise ValueError("Ollama timeout must be greater than zero")
         parsed = urllib.parse.urlparse(base_url)
         if parsed.scheme != "http" or parsed.port is None:
             raise ValueError("Ollama URL must be an explicit local HTTP URL, e.g. http://127.0.0.1:11434")
@@ -25,6 +39,7 @@ class OllamaClient:
             raise ValueError("For privacy, Ollama must be hosted on this computer (loopback only)")
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.keep_alive = keep_alive
 
     def _post(self, endpoint: str, payload: dict[str, object]) -> dict[str, object]:
         body = json.dumps(payload).encode("utf-8")
@@ -44,7 +59,10 @@ class OllamaClient:
         return result
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
-        result = self._post("/api/embed", {"model": model, "input": texts})
+        result = self._post(
+            "/api/embed",
+            {"model": model, "input": texts, "keep_alive": self.keep_alive},
+        )
         embeddings = result.get("embeddings")
         if not isinstance(embeddings, list) or len(embeddings) != len(texts):
             raise OllamaError("Ollama returned an invalid embedding response")
@@ -59,6 +77,11 @@ class OllamaClient:
             {
                 "model": model,
                 "stream": False,
+                # Skip the reasoning phase of "thinking" models such as qwen3:
+                # it is slow and not needed for a short structured answer.
+                # Models without a thinking mode accept and ignore this flag.
+                "think": False,
+                "keep_alive": self.keep_alive,
                 "format": "json",
                 "options": {"temperature": 0.2},
                 "messages": [
