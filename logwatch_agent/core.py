@@ -14,8 +14,9 @@ _RFC3164_PREFIX = re.compile(
     r"\s+(?P<host>\S+)\s+(?P<message>.*)$"
 )
 _KEY_VALUE = re.compile(r"""(?P<key>[A-Za-z_][\w.-]*)=(?P<value>"[^"]*"|'[^']*'|\S+)""")
+# "from 192.0.2.10" (sshd and others) or "client: 192.0.2.10" (nginx error log).
 _SOURCE_IN_MESSAGE = re.compile(
-    r"\bfrom\s+(?P<ip>(?:\d{1,3}\.){3}\d{1,3}|[0-9A-Fa-f:]+)\b",
+    r"\b(?:from|client:)\s+(?P<ip>(?:\d{1,3}\.){3}\d{1,3}|[0-9A-Fa-f:]+)\b",
     re.IGNORECASE,
 )
 _ISO_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -28,8 +29,10 @@ _ALLOW_ACTIONS = {"allow", "allowed", "accept", "accepted", "permit", "permitted
 # in ordinary messages ("connection dropped", "policy=deny-default").
 _DENY_UPPER = re.compile(r"\b(DENY|DENIED|DROP|DROPPED|BLOCK|BLOCKED|REJECT|REJECTED)\b")
 _DENY_PHRASE = re.compile(r"\b(denied|blocked|rejected)\b", re.IGNORECASE)
+# The last two alternatives are nginx basic-auth failures (wrong password, unknown user).
 _AUTH_FAILURE = re.compile(
-    r"\b(authentication failed|login failed|failed password|invalid password)\b",
+    r"\b(authentication failed|login failed|failed password|invalid password"
+    r"|password mismatch|user \"[^\"]*\" was not found)",
     re.IGNORECASE,
 )
 

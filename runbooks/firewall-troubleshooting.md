@@ -2,9 +2,11 @@
 
 ## Expected policy
 
-The demo web service is `198.51.100.20` and accepts HTTPS on TCP port 443.
-The client network is `192.0.2.0/24`. These addresses are reserved for examples
-and do not identify real hosts.
+The demo web service is `198.51.100.20` and accepts HTTP and HTTPS on TCP
+ports 80 and 443. The client network is `192.0.2.0/24`. The edge firewall
+(router1) allows only that traffic to the web service and denies and logs
+everything else, including SSH (TCP 22). These addresses are reserved for
+examples and do not identify real hosts.
 
 ## Investigate repeated denies
 

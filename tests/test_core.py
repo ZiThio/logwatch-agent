@@ -90,6 +90,45 @@ class ParseLogLineTests(unittest.TestCase):
         self.assertEqual(event.source_ip, "192.0.2.7")
 
 
+class LabLogFormatTests(unittest.TestCase):
+    """Lines in the formats the Containerlab lab's rsyslog collector writes."""
+
+    def test_ulogd_firewall_deny_from_router(self) -> None:
+        event = parse_log_line(
+            "2026-11-19T10:00:01.123456+00:00 router1 ulogd[42]: FW-DENY IN=eth2 OUT=eth3 "
+            "MAC=aa:c1:ab:00:00:01 SRC=192.0.2.18 DST=198.51.100.20 LEN=60 PROTO=TCP "
+            "SPT=40000 DPT=22 SYN URGP=0"
+        )
+        assert event is not None
+        self.assertEqual(event.category, "firewall_deny")
+        self.assertEqual(event.source_ip, "192.0.2.18")
+        self.assertEqual(event.hostname, "router1")
+
+    def test_nginx_basic_auth_failures(self) -> None:
+        lines = (
+            '2026-11-19T10:00:02+00:00 web nginx_error: 2026/11/19 10:00:02 [error] 29#29: '
+            '*3 user "admin": password mismatch, client: 192.0.2.18, server: _, '
+            'request: "GET /admin/ HTTP/1.1", host: "198.51.100.20"',
+            '2026-11-19T10:00:03+00:00 web nginx_error: 2026/11/19 10:00:03 [error] 29#29: '
+            '*4 user "root" was not found in "/etc/nginx/htpasswd", client: 192.0.2.18, '
+            'server: _, request: "GET /admin/ HTTP/1.1", host: "198.51.100.20"',
+        )
+        for line in lines:
+            with self.subTest(line=line):
+                event = parse_log_line(line)
+                assert event is not None
+                self.assertEqual(event.category, "authentication_failure")
+                self.assertEqual(event.source_ip, "192.0.2.18")
+
+    def test_nginx_access_log_is_not_an_alert_category(self) -> None:
+        event = parse_log_line(
+            '2026-11-19T10:00:04+00:00 web nginx: 192.0.2.2 - - [19/Nov/2026:10:00:04 +0000] '
+            '"GET / HTTP/1.1" 200 615 "-" "curl/8.9.1"'
+        )
+        assert event is not None
+        self.assertEqual(event.category, "other")
+
+
 class RuleDetectorTests(unittest.TestCase):
     def test_emits_one_alert_at_threshold_with_exact_evidence(self) -> None:
         detector = RuleDetector()
