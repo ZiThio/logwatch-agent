@@ -119,6 +119,7 @@ from scratch.
 | No `FW-DENY` lines after `attack.sh firewall` | `docker exec clab-logwatch-router1 nft list ruleset` and `docker exec clab-logwatch-router1 pgrep -a ulogd` |
 | Port 22 reported open | The firewall rules did not load; rerun `docker exec clab-logwatch-router1 sh /usr/local/bin/lab-start` and read its errors |
 | Client gets no answer from the web server | OSPF: `docker exec clab-logwatch-router1 vtysh -c "show ip route"` |
+| `rsyslogd: could not open config file ... Permission denied` during deploy | Ubuntu's AppArmor profile for rsyslogd also applies inside the (privileged) containers and only allows `/etc/rsyslog.conf` and `/etc/rsyslog.d/`. Keep the config mounted there. Confirm with `sudo dmesg \| grep -i apparmor \| grep rsyslog` |
 | `ip addr add` fails with "Operation not permitted" | The node is not privileged; check your Containerlab version's defaults |
 | Alerts have `"error": "AI explanation unavailable"` | `curl http://127.0.0.1:11434/api/tags` (SSH tunnel) |
 | Service keeps restarting | `journalctl --user -u logwatch-agent -n 30` |

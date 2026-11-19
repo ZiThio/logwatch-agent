@@ -32,7 +32,9 @@ topology:
       image: logwatch/router:lab
       binds:
         - ./configs/router-start.sh:/usr/local/bin/lab-start:ro
-        - ./configs/router-rsyslog.conf:/etc/rsyslog-lab.conf:ro
+        # Must be /etc/rsyslog.conf: on Ubuntu hosts, AppArmor's rsyslogd profile
+        # also applies inside privileged containers and blocks other paths.
+        - ./configs/router-rsyslog.conf:/etc/rsyslog.conf:ro
         - ./configs/router1/frr.conf:/etc/frr/frr.conf:ro
         - ./configs/router1/nftables.nft:/etc/nftables-lab.nft:ro
         - ./configs/router1/ulogd.conf.in:/etc/ulogd-lab.conf.in:ro
@@ -44,7 +46,7 @@ topology:
       image: logwatch/router:lab
       binds:
         - ./configs/router-start.sh:/usr/local/bin/lab-start:ro
-        - ./configs/router-rsyslog.conf:/etc/rsyslog-lab.conf:ro
+        - ./configs/router-rsyslog.conf:/etc/rsyslog.conf:ro
         - ./configs/router2/frr.conf:/etc/frr/frr.conf:ro
       exec:
         - sh /usr/local/bin/lab-start

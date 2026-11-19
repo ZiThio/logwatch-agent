@@ -6,6 +6,7 @@
 #               -> "authentication-failure-burst" alert (5 failures within 60 s)
 # Usage: attack.sh [firewall|auth|all]   (default: all)
 set -euo pipefail
+source "$(dirname "$0")/lib.sh"
 
 ATTACKER=clab-logwatch-attacker
 WEB=198.51.100.20
@@ -27,6 +28,8 @@ auth() {
             -u "admin:$password" "http://$WEB/admin/"
     done
 }
+
+require_running "$ATTACKER"
 
 case "$SCENARIO" in
     firewall) firewall ;;

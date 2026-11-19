@@ -4,6 +4,8 @@
 live-demo.log
 lab/logs/*
 !lab/logs/.gitkeep
+# Created by Containerlab on deploy
+lab/clab-*/
 
 # Python
 __pycache__/
